@@ -6,6 +6,8 @@ listen. You wear the microphones.
 No dependencies, no build step, no server — one HTML file and one JS file, opened
 in Chrome.
 
+**[Try it live →](https://thesigns.github.io/Whistle/)** — put headphones on first.
+
 ## The idea
 
 Hang a double pendulum in the middle of a square domain and tie a whistle to the
@@ -24,7 +26,9 @@ distant thunder, and the two ears drift completely out of sync.
 
 ## Running it
 
-Double-click `index.html`. That is the whole install.
+The hosted copy is at <https://thesigns.github.io/Whistle/>.
+
+To run it locally, double-click `index.html`. That is the whole install.
 
 If Chrome refuses to start the audio engine from `file://`, serve the folder:
 
@@ -32,8 +36,7 @@ If Chrome refuses to start the audio engine from `file://`, serve the folder:
 python -m http.server 8000
 ```
 
-then open <http://127.0.0.1:8000/>. Everything here is static, so it also runs
-unmodified on GitHub Pages.
+then open <http://127.0.0.1:8000/>.
 
 Click **Start audio** — browsers will not produce sound until you interact with
 the page. **Headphones are the point**; on speakers the left/right separation
