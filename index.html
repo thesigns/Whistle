@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whistle &mdash; chaotic pendulum acoustics</title>
+<style>
+  :root {
+    --bg: #0d1014;
+    --panel: #151a21;
+    --line: #262f3a;
+    --text: #d7dee7;
+    --dim: #7b8798;
+    --accent: #58c8ff;
+    --left: #ff8a5c;
+    --right: #7ee081;
+    --whistle: #ffd45e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #app { display: flex; height: 100%; }
+
+  /* ---- stage ---- */
+  #stage {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 14px;
+    gap: 10px;
+  }
+  #canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  canvas { display: block; border-radius: 4px; cursor: crosshair; }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    font-size: 15px;
+    color: var(--dim);
+    letter-spacing: .04em;
+  }
+  #overlay.hidden { display: none; }
+
+  #readout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    flex: none;
+  }
+  #readout div { background: var(--panel); padding: 6px 9px; }
+  #readout span {
+    display: block;
+    color: var(--dim);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+  }
+  #readout b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---- panel ---- */
+  #panel {
+    width: 320px;
+    flex: none;
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    padding: 16px;
+    overflow-y: auto;
+  }
+  #panel h1 { margin: 0; font-size: 17px; letter-spacing: .1em; text-transform: uppercase; }
+  #panel .sub { margin: 4px 0 14px; color: var(--dim); font-size: 12px; }
+
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 16px; }
+  button {
+    background: #1e2732;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 7px 8px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover { background: #26313e; border-color: #3a4757; }
+  button.on { background: #17384a; border-color: var(--accent); color: var(--accent); }
+
+  h2 {
+    margin: 16px 0 8px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--dim);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 4px;
+  }
+  .ctl { display: block; margin-bottom: 9px; }
+  .ctl .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .ctl .name { font-size: 12px; }
+  .ctl .val { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .ctl input[type=range] { width: 100%; margin: 2px 0 0; accent-color: var(--accent); }
+
+  .toggles { margin-top: 16px; display: grid; gap: 5px; }
+  .toggles label { display: flex; align-items: center; gap: 7px; font-size: 12px; cursor: pointer; }
+  .hint {
+    color: var(--dim);
+    font-size: 11px;
+    margin-top: 16px;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <section id="stage">
+    <div id="canvas-wrap">
+      <canvas id="view"></canvas>
+      <div id="overlay">Click &ldquo;Start audio&rdquo; &mdash; headphones recommended</div>
+    </div>
+    <div id="readout">
+      <div><span>Left mic</span><b id="ro-ld">&ndash;</b></div>
+      <div><span>Left delay</span><b id="ro-lt">&ndash;</b></div>
+      <div><span>Right mic</span><b id="ro-rd">&ndash;</b></div>
+      <div><span>Right delay</span><b id="ro-rt">&ndash;</b></div>
+      <div><span>Interaural</span><b id="ro-itd">&ndash;</b></div>
+      <div><span>Whistle</span><b id="ro-freq">&ndash;</b></div>
+      <div><span>Tip speed</span><b id="ro-speed">&ndash;</b></div>
+      <div><span>Air lowpass L/R</span><b id="ro-air">&ndash;</b></div>
+      <div><span>Image sources</span><b id="ro-img">&ndash;</b></div>
+    </div>
+  </section>
+
+  <aside id="panel">
+    <h1>Whistle</h1>
+    <p class="sub">A double pendulum carrying a whistle, heard through two microphones in a reverberant square domain.</p>
+    <div class="buttons">
+      <button id="btn-audio">Start audio</button>
+      <button id="btn-pause">Pause</button>
+      <button id="btn-reset">Reset</button>
+      <button id="btn-random">Randomize</button>
+    </div>
+    <div id="groups"></div>
+    <div class="toggles">
+      <label><input type="checkbox" id="chk-waves" checked> Show wavefronts</label>
+      <label><input type="checkbox" id="chk-trail" checked> Show whistle trail</label>
+      <label><input type="checkbox" id="chk-mute"> Mute whistle (echoes ring out)</label>
+    </div>
+    <p class="hint">
+      Drag the two microphones anywhere in the domain.
+      Keys: <b>Space</b> pause &middot; <b>R</b> randomize.
+      Sound always travels at 343&nbsp;m/s in real time, so the time-scale slider
+      also sets how fast the whistle moves relative to sound &mdash; that is, how
+      much Doppler you get.
+    </p>
+  </aside>
+</div>
+
+<!--
+  AudioWorklet source, kept inline on purpose: addModule() cannot fetch a sibling
+  script under file://, so app.js turns this block into a Blob URL instead. That
+  keeps the page working by double-clicking it, with no server and no build step.
+-->
+<script id="worklet-source" type="text/worklet">
+'use strict';
+
+const TWO_PI = Math.PI * 2;
+const SOUND_SPEED = 343;        // m/s, dry air at ~20 C
+const MAX_DELAY_SECONDS = 24;   // enough for reflection order 4 in a 1000 m domain
+const MAX_ORDER = 4;
+const POST_EVERY = 6;           // render quanta between UI state messages
+const MIN_TAP_GAIN = 1e-4;
+
+// Air swallows high frequencies roughly in proportion to the square of the
+// frequency - about 0.5 dB per 100 m at 1 kHz in ordinary indoor air, far more
+// at 8 kHz. Approximated per path by a one-pole low-pass whose -3 dB point sits
+// where that path has eaten 3 dB, which is why distant echoes go dull.
+const AIR_DB_PER_M_AT_1KHZ = 0.005;
+
+// One moving point source (the whistle) heard by two omnidirectional microphones.
+//
+// Walls are handled with the image-source method: every mirrored copy of the
+// whistle becomes one extra tap on a single shared delay line, so reflections
+// cost little beyond the taps themselves. Reading that delay line at a moving
+// fractional position is what produces the Doppler shift - it is never modelled
+// as a separate effect.
+//
+// Everything runs here rather than on the main thread because the delay has to
+// follow the whistle sample by sample; the main thread only gets positions to draw.
+class WhistleProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.sr = sampleRate;
+    this.bufLen = Math.ceil(MAX_DELAY_SECONDS * this.sr);
+    this.buf = new Float32Array(this.bufLen);
+    this.writeIdx = 0;
+
+    this.p = {
+      domain: 120,
+      absorption: 0.55,
+      order: 2,
+      airAbsorption: 1,
+      armSpan: 0.40,
+      timeScale: 1,
+      gravity: 9.81,
+      damping: 0,
+      baseFreq: 850,
+      harmonics: 0.55,
+      noiseMix: 0.12,
+      warble: 0.20,
+      speedToPitch: 0,
+      gain: 0.2,
+      crossfeed: 0,
+      // Just outside the disc the whistle sweeps, so it swings close past each
+      // microphone without ever sitting on top of it.
+      micL: [0.25, 0.72],
+      micR: [0.75, 0.72],
+      running: true,
+      muted: false
+    };
+
+    // Pendulum state: angles measured from the downward vertical.
+    this.th1 = 2.40; this.th2 = 2.55; this.w1 = 0; this.w2 = 0;
+
+    // Whistle oscillator state.
+    this.phase = 0;
+    this.warblePhase = 0;
+    this.svfLow = 0;
+    this.svfBand = 0;
+    this.amp = 0;
+    this.speed = 0;
+    this.freq = this.p.baseFreq;
+
+    this.k1 = new Float64Array(4);
+    this.k2 = new Float64Array(4);
+    this.k3 = new Float64Array(4);
+    this.k4 = new Float64Array(4);
+
+    this.src = new Float32Array(128);
+    this.accL = new Float32Array(128);
+    this.accR = new Float32Array(128);
+
+    // One air-absorption low-pass state per (image source, microphone) pair.
+    // Indexed by the image's (i, j) so the state stays put when the reflection
+    // order slider adds or removes outer images.
+    this.lpSpan = 2 * MAX_ORDER + 1;
+    this.lp = new Float32Array(this.lpSpan * this.lpSpan * 2);
+
+    this.trail = [];
+    this.quantum = 0;
+    this.prevTip = this.tipPosition();
+
+    this.port.onmessage = (e) => this.onMessage(e.data);
+  }
+
+  onMessage(msg) {
+    if (!msg) return;
+    if (msg.type === 'params') {
+      const p = msg.params;
+      for (const k in p) this.p[k] = p[k];
+    } else if (msg.type === 'state') {
+      this.th1 = msg.th1;
+      this.th2 = msg.th2;
+      this.w1 = 0;
+      this.w2 = 0;
+      this.prevTip = this.tipPosition();
+    }
+  }
+
+  // --- geometry -------------------------------------------------------------
+
+  geometry() {
+    const S = this.p.domain;
+    const arm = this.p.armSpan * S * 0.5;   // each of the two arms
+    return { S: S, L1: arm, L2: arm, ax: S * 0.5, ay: S * 0.5 };
+  }
+
+  jointPosition() {
+    const g = this.geometry();
+    return {
+      x: g.ax + g.L1 * Math.sin(this.th1),
+      y: g.ay + g.L1 * Math.cos(this.th1)
+    };
+  }
+
+  tipPosition() {
+    const g = this.geometry();
+    return {
+      x: g.ax + g.L1 * Math.sin(this.th1) + g.L2 * Math.sin(this.th2),
+      y: g.ay + g.L1 * Math.cos(this.th1) + g.L2 * Math.cos(this.th2)
+    };
+  }
+
+  // --- physics --------------------------------------------------------------
+
+  deriv(th1, th2, w1, w2, L1, L2, g, out) {
+    const m1 = 1, m2 = 1;
+    const d = th1 - th2;
+    const sd = Math.sin(d), cd = Math.cos(d);
+    const den = 2 * m1 + m2 - m2 * Math.cos(2 * d);
+    out[0] = w1;
+    out[1] = w2;
+    out[2] = (-g * (2 * m1 + m2) * Math.sin(th1)
+              - m2 * g * Math.sin(th1 - 2 * th2)
+              - 2 * sd * m2 * (w2 * w2 * L2 + w1 * w1 * L1 * cd)) / (L1 * den);
+    out[3] = (2 * sd * (w1 * w1 * L1 * (m1 + m2)
+              + g * (m1 + m2) * Math.cos(th1)
+              + w2 * w2 * L2 * m2 * cd)) / (L2 * den);
+  }
+
+  rk4(h, L1, L2, g) {
+    const k1 = this.k1, k2 = this.k2, k3 = this.k3, k4 = this.k4;
+    const a = this.th1, b = this.th2, c = this.w1, d = this.w2;
+    const h2 = h * 0.5;
+    this.deriv(a, b, c, d, L1, L2, g, k1);
+    this.deriv(a + h2 * k1[0], b + h2 * k1[1], c + h2 * k1[2], d + h2 * k1[3], L1, L2, g, k2);
+    this.deriv(a + h2 * k2[0], b + h2 * k2[1], c + h2 * k2[2], d + h2 * k2[3], L1, L2, g, k3);
+    this.deriv(a + h * k3[0], b + h * k3[1], c + h * k3[2], d + h * k3[3], L1, L2, g, k4);
+    const s = h / 6;
+    this.th1 = a + s * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+    this.th2 = b + s * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+    this.w1  = c + s * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]);
+    this.w2  = d + s * (k1[3] + 2 * k2[3] + 2 * k3[3] + k4[3]);
+  }
+
+  stepPhysics(dtSim) {
+    const g = this.geometry();
+    const grav = this.p.gravity;
+    // Sub-step relative to the pendulum's own natural period, so a 400 m arm is
+    // not integrated with the same tiny step as a 0.2 m one.
+    const limit = 0.0031 * Math.sqrt(g.L1 / grav);
+    let steps = Math.ceil(dtSim / limit);
+    if (!isFinite(steps) || steps < 1) steps = 1;
+    if (steps > 256) steps = 256;
+    const h = dtSim / steps;
+    for (let s = 0; s < steps; s++) this.rk4(h, g.L1, g.L2, grav);
+
+    if (this.p.damping > 0) {
+      const k = Math.exp(-this.p.damping * dtSim);
+      this.w1 *= k;
+      this.w2 *= k;
+    }
+    if (this.th1 > Math.PI) this.th1 -= TWO_PI; else if (this.th1 < -Math.PI) this.th1 += TWO_PI;
+    if (this.th2 > Math.PI) this.th2 -= TWO_PI; else if (this.th2 < -Math.PI) this.th2 += TWO_PI;
+  }
+
+  // --- whistle source -------------------------------------------------------
+
+  renderSource(N) {
+    const p = this.p, sr = this.sr;
+    const g = this.geometry();
+
+    // Reference speed: roughly the fastest the tip ever travels, in real seconds.
+    const vRef = Math.sqrt(2 * p.gravity * (g.L1 + g.L2)) * p.timeScale + 1e-9;
+    let f = p.baseFreq;
+    if (p.speedToPitch > 0) {
+      f *= 1 + p.speedToPitch * Math.min(this.speed / vRef, 3);
+    }
+    f = Math.max(20, Math.min(f, sr / 9));   // keep the 4th harmonic below Nyquist
+    this.freq = f;
+
+    const ampTarget = p.muted ? 0 : 1;
+    const ampCoef = 1 - Math.exp(-1 / (0.015 * sr));
+    const h = p.harmonics;
+    const nm = p.noiseMix;
+    const wb = p.warble;
+
+    // One-pole-per-integrator state variable filter, tuned to the whistle pitch.
+    const F = 2 * Math.sin(Math.PI * Math.min(f, sr * 0.45) / sr);
+    const q = 0.18;
+
+    for (let k = 0; k < N; k++) {
+      this.warblePhase += TWO_PI * 16 / sr;
+      if (this.warblePhase > TWO_PI) this.warblePhase -= TWO_PI;
+      const wob = Math.sin(this.warblePhase);
+
+      this.phase += TWO_PI * f * (1 + wb * 0.02 * wob) / sr;
+      if (this.phase > TWO_PI) this.phase -= TWO_PI;
+      const ph = this.phase;
+
+      // A real pea whistle: strong fundamental, a few fast-decaying harmonics,
+      // and a band of breath noise sitting on the same pitch.
+      let tone = Math.sin(ph)
+               + h * 0.40 * Math.sin(2 * ph)
+               + h * 0.16 * Math.sin(3 * ph)
+               + h * 0.07 * Math.sin(4 * ph);
+      tone *= 0.55;
+
+      const white = Math.random() * 2 - 1;
+      const high = white - this.svfLow - q * this.svfBand;
+      this.svfBand += F * high;
+      this.svfLow += F * this.svfBand;
+
+      let s = tone * (1 - nm) + this.svfBand * 0.8 * nm;
+      s *= 1 - wb * 0.18 * (0.5 + 0.5 * wob);
+
+      this.amp += (ampTarget - this.amp) * ampCoef;
+      this.src[k] = s * this.amp;
+    }
+  }
+
+  // --- one delay-line tap ---------------------------------------------------
+
+  // Reads the shared delay line at a linearly moving fractional position. The
+  // read pointer advancing at a rate other than 1.0 is exactly the Doppler shift.
+  // lpCoef of 1 bypasses the air-absorption low-pass.
+  tap(acc, base, delStart, delEnd, gStart, gEnd, N, lpIdx, lpCoef) {
+    const buf = this.buf, L = this.bufLen;
+    let pos = base - delStart;
+    while (pos < 0) pos += L;
+    while (pos >= L) pos -= L;
+    const step = 1 - (delEnd - delStart) / N;
+    let g = gStart;
+    const gStep = (gEnd - gStart) / N;
+    let y = this.lp[lpIdx];
+    for (let k = 0; k < N; k++) {
+      const i0 = pos | 0;
+      const fr = pos - i0;
+      const i1 = (i0 + 1 === L) ? 0 : i0 + 1;
+      const x = buf[i0] + (buf[i1] - buf[i0]) * fr;
+      y += lpCoef * (x - y);
+      acc[k] += g * y;
+      pos += step;
+      g += gStep;
+      while (pos >= L) pos -= L;
+      while (pos < 0) pos += L;
+    }
+    this.lp[lpIdx] = (y > -1e-20 && y < 1e-20) ? 0 : y;   // flush denormals
+  }
+
+  // --- main render ----------------------------------------------------------
+
+  process(inputs, outputs) {
+    const out = outputs[0];
+    const N = out[0].length;
+    if (this.src.length !== N) {
+      this.src = new Float32Array(N);
+      this.accL = new Float32Array(N);
+      this.accR = new Float32Array(N);
+    }
+    const p = this.p;
+    const dtReal = N / this.sr;
+
+    const tipStart = this.prevTip;
+    if (p.running) this.stepPhysics(dtReal * p.timeScale);
+    const tipEnd = this.tipPosition();
+    this.prevTip = tipEnd;
+
+    // Metres per REAL second. Doppler and the speed-to-pitch option both care
+    // about this one, so the time scale is already baked in.
+    this.speed = Math.hypot(tipEnd.x - tipStart.x, tipEnd.y - tipStart.y) / dtReal;
+
+    this.renderSource(N);
+
+    // Push the whole quantum into the delay line before reading any tap, so a
+    // microphone sitting right on top of the whistle (delay ~ 0) still works.
+    const buf = this.buf, L = this.bufLen;
+    const base = this.writeIdx;
+    let w = base;
+    for (let k = 0; k < N; k++) {
+      buf[w] = this.src[k];
+      w++; if (w === L) w = 0;
+    }
+    this.writeIdx = w;
+
+    const accL = this.accL, accR = this.accR;
+    accL.fill(0);
+    accR.fill(0);
+
+    const S = p.domain;
+    const order = Math.max(0, Math.min(MAX_ORDER, p.order | 0));
+    const refl = p.absorption;
+    const dRef = Math.max(0.5, S * 0.08);   // distance at which 1/r gain saturates
+    const sr = this.sr;
+    const micX = [p.micL[0] * S, p.micR[0] * S];
+    const micY = [p.micL[1] * S, p.micR[1] * S];
+    const airK = AIR_DB_PER_M_AT_1KHZ * p.airAbsorption;
+    const nyq = sr * 0.45;
+
+    // Image sources of a square room: index (i, j) is the whistle mirrored |i|
+    // times across the vertical walls and |j| times across the horizontal ones.
+    for (let i = -order; i <= order; i++) {
+      const rem = order - Math.abs(i);
+      const oddI = i & 1;
+      const sxS = oddI ? (i * S + (S - tipStart.x)) : (i * S + tipStart.x);
+      const sxE = oddI ? (i * S + (S - tipEnd.x))   : (i * S + tipEnd.x);
+      for (let j = -rem; j <= rem; j++) {
+        const rc = Math.pow(refl, Math.abs(i) + Math.abs(j));
+        if (rc < MIN_TAP_GAIN) continue;
+        const oddJ = j & 1;
+        const syS = oddJ ? (j * S + (S - tipStart.y)) : (j * S + tipStart.y);
+        const syE = oddJ ? (j * S + (S - tipEnd.y))   : (j * S + tipEnd.y);
+        const lpBase = ((i + MAX_ORDER) * this.lpSpan + (j + MAX_ORDER)) * 2;
+        for (let m = 0; m < 2; m++) {
+          const dS = Math.hypot(sxS - micX[m], syS - micY[m]);
+          const dE = Math.hypot(sxE - micX[m], syE - micY[m]);
+          const gS = rc * dRef / Math.max(dS, dRef);
+          const gE = rc * dRef / Math.max(dE, dRef);
+          if (gS < MIN_TAP_GAIN && gE < MIN_TAP_GAIN) continue;
+          const delS = dS / SOUND_SPEED * sr;
+          const delE = dE / SOUND_SPEED * sr;
+          if (delS > L - 4 || delE > L - 4) continue;
+
+          let lpCoef = 1;
+          if (airK > 0) {
+            const fc = 1000 * Math.sqrt(3 / (airK * Math.max(0.5 * (dS + dE), 0.01)));
+            if (fc < nyq) lpCoef = 1 - Math.exp(-TWO_PI * fc / sr);
+          }
+          this.tap(m === 0 ? accL : accR, base, delS, delE, gS, gE, N, lpBase + m, lpCoef);
+        }
+      }
+    }
+
+    const gain = p.gain, cf = p.crossfeed;
+    const chL = out[0];
+    const chR = out.length > 1 ? out[1] : out[0];
+    for (let k = 0; k < N; k++) {
+      const a = accL[k], b = accR[k];
+      chL[k] = Math.tanh((a * (1 - cf) + b * cf) * gain);
+      chR[k] = Math.tanh((b * (1 - cf) + a * cf) * gain);
+    }
+
+    this.trail.push(tipEnd.x / S, tipEnd.y / S);
+    if (++this.quantum >= POST_EVERY) {
+      this.quantum = 0;
+      const joint = this.jointPosition();
+      this.port.postMessage({
+        th1: this.th1,
+        th2: this.th2,
+        jx: joint.x / S, jy: joint.y / S,
+        tx: tipEnd.x / S, ty: tipEnd.y / S,
+        speed: this.speed,
+        freq: this.freq,
+        trail: this.trail
+      });
+      this.trail = [];
+    }
+    return true;
+  }
+}
+
+registerProcessor('whistle-processor', WhistleProcessor);
+</script>
+<script src="app.js"></script>
+</body>
+</html>
