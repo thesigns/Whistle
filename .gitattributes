@@ -1,0 +1,12 @@
+# Store every text file with LF in the repository, whatever the contributor's
+# platform. Working copies keep whatever the local core.autocrlf setting wants.
+* text=auto
+
+# Never touch line endings in these.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
